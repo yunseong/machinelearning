@@ -134,8 +134,10 @@ namespace Microsoft.ML.Runtime.Model
             }
 
             // TryLoadModelCore should rewind on failure.
-            Contracts.Assert(fp == ent.Stream.Position);
-            return false;
+            //Contracts.Assert(fp == ent.Stream.Position);
+            //return false;
+            Console.WriteLine("The model is unable to load: {0}", extra.ToString());
+            return true;
         }
 
         /// <summary>
@@ -239,11 +241,19 @@ namespace Microsoft.ML.Runtime.Model
                 }
                 // REVIEW: Should this fall through?
             }
+
+            ComponentCatalog.TryCreateInstance<object, TSig>(env, out tmp, "NopTransform", "", args);
+            result = tmp as TRes;
+            Console.WriteLine("We convert the unsupported transform ({0}) to NoOp ;)", sig);
+            return true;
+
+            /*
             _ectx.Assert(Reader.BaseStream.Position == FpMin + Header.FpModel);
 
             Reader.BaseStream.Position = FpMin;
             result = null;
             return false;
+            */
         }
 
         private static object[] ConcatArgsRev(object[] args2, params object[] args1)

@@ -66,7 +66,7 @@ namespace Microsoft.ML.Runtime.Data
             var h = env.Register(RegistrationName);
             h.CheckValue(ctx, nameof(ctx));
             h.CheckValue(input, nameof(input));
-            ctx.CheckAtModel(GetVersionInfo());
+            //ctx.CheckAtModel(GetVersionInfo());
             return h.Apply("Loading Model", ch => new NopTransform(h, ctx,  input));
         }
 

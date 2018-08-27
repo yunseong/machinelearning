@@ -4,7 +4,7 @@
       "description": "Sets the optimization level for the Build Configuration you want to build.",
       "valueType": "property",
       "values": [ "Debug", "Release" ],
-      "defaultValue": "Debug"
+      "defaultValue": "Release"
     },
     "TargetArchitecture": {
       "description": "Sets the architecture for the native assets you want to build.",
