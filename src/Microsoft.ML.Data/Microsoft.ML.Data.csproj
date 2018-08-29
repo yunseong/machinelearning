@@ -18,4 +18,10 @@
     <ProjectReference Include="..\Microsoft.ML.CpuMath\Microsoft.ML.CpuMath.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Reference Include="Microsoft.NaturalLanguage.Runtime.Managed">
+      <HintPath>..\..\..\TLC\packages\TLC.Resources.TextAnalytics.Default.2017.3.29.1\lib\net40\microsoft.naturallanguage.runtime.managed.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
 </Project>

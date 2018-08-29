@@ -11,14 +11,14 @@ using static Microsoft.ML.Runtime.Tools.Console.AttendeeModel;
 using Microsoft.ML.Runtime.Api;
 using System.Diagnostics;
 using System.IO;
+using static Microsoft.ML.Runtime.Tools.Console.AmazonModel;
 
 namespace Microsoft.ML.Runtime.Tools.Console
 {
     public static class Console
     {
         private static string _metadataFile = @"%USERPROFILE%\Source\Repos\TLC\DataCollector\model-data-file-paths.txt";
-//        private static string _amznModelFile = @"%USERPROFILE%\OneDrive - Microsoft\models\ML.NET_Amazon\2.model.fold000.zip";
-//        private static string _amznInputRecordFile = @"%USERPROFILE%\OneDrive - Microsoft\models\AmazonReview_1024records.csv";
+        private static string _amznInputRecordFile = @"%USERPROFILE%\OneDrive - Microsoft\models\AmazonReview_100records.csv";
         private static string _atndInputRecordFile = @"%USERPROFILE%\OneDrive - Microsoft\models\AttendeeCountPrediction_100records.csv";
 
         public static int Main(string[] args)
@@ -31,10 +31,11 @@ namespace Microsoft.ML.Runtime.Tools.Console
 
             IHostEnvironment env = new TlcEnvironment();
             var atndBatches = AttendeeModel.Parse(Environment.ExpandEnvironmentVariables(_atndInputRecordFile), batchSize);
-            LoadModels(env, out IDictionary<string, BatchPredictionEngine<AttendeeData, AttendeeResult>> atndEngines);
+            var amznBatches = AmazonModel.Parse(Environment.ExpandEnvironmentVariables(_amznInputRecordFile), batchSize);
+            LoadModels(env,
+                out IDictionary<string, BatchPredictionEngine<AttendeeData, AttendeeResult>> atndEngines,
+                out IDictionary<string, BatchPredictionEngine<AmazonData, AmazonResult>> amznEngines);
 
-//            var engine = AmazonModel.CreateEngine(env, Environment.ExpandEnvironmentVariables(_amznModelFile));
-//            foreach (var batch in AmazonModel.Parse(Environment.ExpandEnvironmentVariables(_amznInputRecordFile)))
             foreach (var engine in atndEngines)
             {
               foreach (var batch in atndBatches)
@@ -42,8 +43,16 @@ namespace Microsoft.ML.Runtime.Tools.Console
                 var startTime = Stopwatch.GetTimestamp();
                 var result = engine.Value.Predict(batch, false);
                 var latency = (Stopwatch.GetTimestamp() - startTime) * 1000.0 / Stopwatch.Frequency;
-                //System.Console.WriteLine("File: {0} Result: {1}", engine.Key, string.Join(',', result.Select(x => x.Score)));
-                //System.Console.WriteLine("File: {0} Latency: {1}", engine.Key, latency);
+                System.Console.WriteLine("File: {0} Latency: {1} Result: {2}", engine.Key, latency, string.Join(',', result.Select(x => x.Score)));
+              }
+            }
+            foreach (var engine in amznEngines)
+            {
+              foreach (var batch in amznBatches)
+              {
+                var startTime = Stopwatch.GetTimestamp();
+                var result = engine.Value.Predict(batch, false);
+                var latency = (Stopwatch.GetTimestamp() - startTime) * 1000.0 / Stopwatch.Frequency;
                 System.Console.WriteLine("File: {0} Latency: {1} Result: {2}", engine.Key, latency, string.Join(',', result.Select(x => x.Score)));
               }
             }
@@ -52,11 +61,14 @@ namespace Microsoft.ML.Runtime.Tools.Console
             return 0;
         }
 
-        private static void LoadModels(IHostEnvironment env, out IDictionary<string, BatchPredictionEngine<AttendeeData, AttendeeResult>> atndEngines)
+        private static void LoadModels(IHostEnvironment env,
+            out IDictionary<string, BatchPredictionEngine<AttendeeData, AttendeeResult>> atndEngines,
+            out IDictionary<string, BatchPredictionEngine<AmazonData, AmazonResult>> amznEngines)
         {
           var numModels = 0;
           var totalStartTime = Stopwatch.GetTimestamp();
           atndEngines = new Dictionary<string, BatchPredictionEngine<AttendeeData, AttendeeResult>>();
+          amznEngines = new Dictionary<string, BatchPredictionEngine<AmazonData, AmazonResult>>();
           using (var reader = new StreamReader(Environment.ExpandEnvironmentVariables(_metadataFile)))
           {
             string line;
@@ -65,15 +77,19 @@ namespace Microsoft.ML.Runtime.Tools.Console
               string[] splits = line.Split();
               var modelPath = Environment.ExpandEnvironmentVariables(splits[0]);
 
+              var startTime = Stopwatch.GetTimestamp();
               if (modelPath.Contains("Attendee"))
               {
-                var startTime = Stopwatch.GetTimestamp();
                 var engine = AttendeeModel.CreateEngine(env, Environment.ExpandEnvironmentVariables(modelPath));
                 atndEngines.Add(modelPath, engine);
-                var loadingTime = (Stopwatch.GetTimestamp() - startTime) * 1000.0 / Stopwatch.Frequency;
-                System.Console.WriteLine("Load {0} in {1} ms", modelPath, loadingTime);
-                break;
               }
+              else if (modelPath.Contains("Amazon"))
+              {
+                var engine = AmazonModel.CreateEngine(env, Environment.ExpandEnvironmentVariables(modelPath));
+                amznEngines.Add(modelPath, engine);
+              }
+              var loadingTime = (Stopwatch.GetTimestamp() - startTime) * 1000.0 / Stopwatch.Frequency;
+              System.Console.WriteLine("Load {0} in {1} ms", modelPath, loadingTime);
               // TODO: Other type of models
 
               numModels++;
