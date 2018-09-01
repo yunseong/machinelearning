@@ -36,14 +36,16 @@ namespace Microsoft.ML.Runtime.Tools.Console
                 out IDictionary<string, BatchPredictionEngine<AttendeeData, AttendeeResult>> atndEngines,
                 out IDictionary<string, BatchPredictionEngine<AmazonData, AmazonResult>> amznEngines);
 
+            var predictionStartTime = Stopwatch.GetTimestamp();
             foreach (var engine in atndEngines)
             {
               foreach (var batch in atndBatches)
               {
                 var startTime = Stopwatch.GetTimestamp();
                 var result = engine.Value.Predict(batch, false);
+                var resultStr = string.Join(',', result.Select(x => x.Score));
                 var latency = (Stopwatch.GetTimestamp() - startTime) * 1000.0 / Stopwatch.Frequency;
-                System.Console.WriteLine("File: {0} Latency: {1} Result: {2}", engine.Key, latency, string.Join(',', result.Select(x => x.Score)));
+                System.Console.WriteLine("File: {0} Latency: {1} Result: {2}", engine.Key, latency, resultStr);
               }
             }
             foreach (var engine in amznEngines)
@@ -52,12 +54,14 @@ namespace Microsoft.ML.Runtime.Tools.Console
               {
                 var startTime = Stopwatch.GetTimestamp();
                 var result = engine.Value.Predict(batch, false);
+                var resultStr = string.Join(',', result.Select(x => x.Score));
                 var latency = (Stopwatch.GetTimestamp() - startTime) * 1000.0 / Stopwatch.Frequency;
-                System.Console.WriteLine("File: {0} Latency: {1} Result: {2}", engine.Key, latency, string.Join(',', result.Select(x => x.Score)));
+                System.Console.WriteLine("File: {0} Latency: {1} Result: {2}", engine.Key, latency, resultStr);
               }
             }
-
-            System.Console.WriteLine("Done");
+            var predictionEndTime = Stopwatch.GetTimestamp();
+            System.Console.WriteLine("Done. Total prediction Time: {0}",
+                (predictionEndTime - predictionStartTime) * 1000.0 / Stopwatch.Frequency);
             return 0;
         }
 
