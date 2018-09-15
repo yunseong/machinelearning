@@ -186,7 +186,8 @@ namespace Microsoft.ML.Runtime.Tools.Console
             BatchPredictionEngine<AttendeeData, AttendeeResult> atndEngines,
             List<AttendeeData[]> atndBatches,
             BatchPredictionEngine<AmazonData, AmazonResult> amznEngines,
-            List<AmazonData[]> amznBatches)
+            List<AmazonData[]> amznBatches,
+            bool print = true)
         {
             if (atndEngines != null)
             {
@@ -196,7 +197,10 @@ namespace Microsoft.ML.Runtime.Tools.Console
                     var result = atndEngines.Predict(batch, false);
                     var resultStr = string.Join(',', result.Select(x => x.Score));
                     var latency = (Stopwatch.GetTimestamp() - startTime) * 1000.0 / Stopwatch.Frequency;
-                    System.Console.WriteLine("File: {0} Latency: {1} Result: {2}", modelFile, latency, resultStr);
+                    if (print)
+                    {
+                        System.Console.WriteLine("File: {0} Latency: {1} Result: {2}", modelFile, latency, resultStr);
+                    }
                 }
             }
             else if (amznEngines != null)
@@ -208,7 +212,10 @@ namespace Microsoft.ML.Runtime.Tools.Console
                     var result = amznEngines.Predict(batch, false);
                     var resultStr = string.Join(',', result.Select(x => x.Score));
                     var latency = (Stopwatch.GetTimestamp() - startTime) * 1000.0 / Stopwatch.Frequency;
-                    System.Console.WriteLine("File: {0} Latency: {1} Result: {2}", modelFile, latency, resultStr);
+                    if (print)
+                    {
+                        System.Console.WriteLine("File: {0} Latency: {1} Result: {2}", modelFile, latency, resultStr);
+                    }
                 }
             }
         }
@@ -237,12 +244,14 @@ namespace Microsoft.ML.Runtime.Tools.Console
               if (modelPath.Contains("Attendee"))
               {
                 var engine = AttendeeModel.CreateEngine(env, Environment.ExpandEnvironmentVariables(modelPath));
+                RunLatencySingle(modelPath, engine, atndBatches.Take(10).ToList(), null, amznBatches.Take(10).ToList(), false);
                 RunLatencySingle(modelPath, engine, atndBatches, null, amznBatches);
                 //atndEngines.Add(modelPath, engine);
               }
               else if (modelPath.Contains("Amazon"))
               {
                 var engine = AmazonModel.CreateEngine(env, Environment.ExpandEnvironmentVariables(modelPath));
+                RunLatencySingle(modelPath, null, atndBatches.Take(10).ToList(), engine, amznBatches.Take(10).ToList(), false);
                 RunLatencySingle(modelPath, null, atndBatches, engine, amznBatches);
                 //amznEngines.Add(modelPath, engine);
               }
