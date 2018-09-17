@@ -20,15 +20,66 @@ namespace Microsoft.ML.Runtime.Tools.Console
     public static class Console
     {
         private static string _metadataFile = @"%USERPROFILE%\Source\Repos\TLC\DataCollector\model-data-file-paths.txt";
-        private static string _amznInputRecordFile = @"%USERPROFILE%\OneDrive - Microsoft\models\AmazonReview_100records.csv";
-        private static string _atndInputRecordFile = @"%USERPROFILE%\OneDrive - Microsoft\models\AttendeeCountPrediction_100records.csv";
+        private static string _amznInputRecordFile = @"%USERPROFILE%\OneDrive - Microsoft\models\AmazonReview_1024records.csv";
+        private static string _atndInputRecordFile = @"%USERPROFILE%\OneDrive - Microsoft\models\AttendeeCountPrediction_1024records.csv";
+
+        private static int _numExecutors = 1;
+        private static int _numIterations = 1;
+        private static int _numRequestHandler = 1;
+        private static int _numStageHandlerThreads = 1;
+
+        private static void PrintHelp()
+        {
+            System.Console.WriteLine("PARAMETERS:");
+            System.Console.WriteLine("\t-nex <number of executors>; default is {0}>", _numExecutors);
+            System.Console.WriteLine("\t-i <number of iterations; default is {0}>", _numIterations);
+            System.Console.WriteLine("\t-nsht <number of stage handler threads>; default is {0}>", _numStageHandlerThreads);
+            System.Console.WriteLine("\t-nbrt <number of request threads>; default is {0}>", _numRequestHandler);
+
+        }
+
+        private static void ParseArgs(string[] args)
+        {
+            for (int j = 0; j < args.Count(); j++)
+            {
+                switch (args[j])
+                {
+                    case "-nex":
+                        _numExecutors = int.Parse(args[j + 1]);
+                        j++;
+                        break;
+                    case "-nbrt":
+                        _numRequestHandler = int.Parse(args[j + 1]);
+                        j++;
+                        break;
+                    case "-nsht":
+                        _numStageHandlerThreads = int.Parse(args[j + 1]);
+                        j++;
+                        break;
+                    case "-i":
+                        _numIterations = int.Parse(args[j + 1]);
+                        j++;
+                        break;
+                    case "-h":
+                        PrintHelp();
+                        Environment.Exit(-1);
+                        break;
+                    default:
+                        System.Console.WriteLine("unknown option: " + args[j]);
+                        Environment.Exit(-1);
+                        break;
+                }
+            }
+        }
 
         public static int Main(string[] args)
         { //=> Maml.Main(args);
             IHostEnvironment env = new TlcEnvironment();
-            //int batchSize = 1;
             //var atndBatches = AttendeeModel.Parse(Environment.ExpandEnvironmentVariables(_atndInputRecordFile), batchSize);
             //var amznBatches = AmazonModel.Parse(Environment.ExpandEnvironmentVariables(_amznInputRecordFile), batchSize);
+
+            ParseArgs(args);
+
             LoadModels(env,
                 out IDictionary<string, BatchPredictionEngine<AttendeeData, AttendeeResult>> atndEngines,
                 out IDictionary<string, BatchPredictionEngine<AmazonData, AmazonResult>> amznEngines);
@@ -44,7 +95,7 @@ namespace Microsoft.ML.Runtime.Tools.Console
         }
 
         private static double RunInParallel<TData, TResult>(
-            BatchPredictionEngine<TData, TResult> engine,
+            ThreadLocal<BatchPredictionEngine<TData, TResult>> engine,
             List<TData[]> batches,
             IExecutor[] executors,
             int numThreadsPerExecutor,
@@ -61,7 +112,7 @@ namespace Microsoft.ML.Runtime.Tools.Console
                     // Does it make sure we cache?
                     executor.Submit(() =>
                     {
-                        var result = engine.Predict(batches[0], false);
+                        var result = engine.Value.Predict(batches[0], false);
                         var resultStr = string.Join(',', result.Select(x =>
                         {
                             if (x is AttendeeResult)
@@ -97,7 +148,7 @@ namespace Microsoft.ML.Runtime.Tools.Console
                     executors[bIdx % executors.Length].Submit(() =>
                     {
                         //results.Enqueue(engine.Predict(batches[bIdx % batches.Count]));
-                        var result = engine.Predict(batches[bIdx % batches.Count], false);
+                        var result = engine.Value.Predict(batches[bIdx % batches.Count], true);
                         var resultStr = string.Join(',', result.Select(x =>
                         {
                             if (x is AttendeeResult)
@@ -145,6 +196,7 @@ namespace Microsoft.ML.Runtime.Tools.Console
             }
 
             var totalPredictionTime = 0.0;
+            /*
             foreach (var engine in atndEngines)
             {
                 totalPredictionTime += RunInParallel(engine.Value, atndBatches, executors, numThreadsPerExecutor, numRequestors, numRepeat);
@@ -153,6 +205,7 @@ namespace Microsoft.ML.Runtime.Tools.Console
             {
                 totalPredictionTime += RunInParallel(engine.Value, amznBatches, executors, numThreadsPerExecutor, numRequestors, numRepeat);
             }
+            */
             System.Console.WriteLine("Total time is: " + totalPredictionTime);
         }
 
@@ -224,53 +277,71 @@ namespace Microsoft.ML.Runtime.Tools.Console
             out IDictionary<string, BatchPredictionEngine<AttendeeData, AttendeeResult>> atndEngines,
             out IDictionary<string, BatchPredictionEngine<AmazonData, AmazonResult>> amznEngines)
         {
-            int batchSize = 1;
+            int batchSize = 1024;
             var atndBatches = AttendeeModel.Parse(Environment.ExpandEnvironmentVariables(_atndInputRecordFile), batchSize);
             var amznBatches = AmazonModel.Parse(Environment.ExpandEnvironmentVariables(_amznInputRecordFile), batchSize);
 
-          var numModels = 0;
-          var totalStartTime = Stopwatch.GetTimestamp();
-          atndEngines = new Dictionary<string, BatchPredictionEngine<AttendeeData, AttendeeResult>>();
-          amznEngines = new Dictionary<string, BatchPredictionEngine<AmazonData, AmazonResult>>();
-          using (var reader = new StreamReader(Environment.ExpandEnvironmentVariables(_metadataFile)))
-          {
-            string line;
-            while ((line = reader.ReadLine()) != null)
+            var numModels = 0;
+            var totalStartTime = Stopwatch.GetTimestamp();
+            atndEngines = new Dictionary<string, BatchPredictionEngine<AttendeeData, AttendeeResult>>();
+            amznEngines = new Dictionary<string, BatchPredictionEngine<AmazonData, AmazonResult>>();
+
+            IExecutor[] executors = new IExecutor[_numExecutors];
+            for (int i = 0; i < _numExecutors; i++)
             {
-              string[] splits = line.Split();
-              var modelPath = Environment.ExpandEnvironmentVariables(splits[0]);
-
-              var startTime = Stopwatch.GetTimestamp();
-              if (modelPath.Contains("Attendee"))
-              {
-                var engine = AttendeeModel.CreateEngine(env, Environment.ExpandEnvironmentVariables(modelPath));
-                RunLatencySingle(modelPath, engine, atndBatches.Take(10).ToList(), null, amznBatches.Take(10).ToList(), false);
-                RunLatencySingle(modelPath, engine, atndBatches, null, amznBatches);
-                //atndEngines.Add(modelPath, engine);
-              }
-              else if (modelPath.Contains("Amazon"))
-              {
-                var engine = AmazonModel.CreateEngine(env, Environment.ExpandEnvironmentVariables(modelPath));
-                RunLatencySingle(modelPath, null, atndBatches.Take(10).ToList(), engine, amznBatches.Take(10).ToList(), false);
-                RunLatencySingle(modelPath, null, atndBatches, engine, amznBatches);
-                //amznEngines.Add(modelPath, engine);
-              }
-              var loadingTime = (Stopwatch.GetTimestamp() - startTime) * 1000.0 / Stopwatch.Frequency;
-              using (Process proc = Process.GetCurrentProcess())
-              {
-                var memory = proc.PrivateMemorySize64;
-                System.Console.WriteLine("Load {0} in {1} ms", modelPath, loadingTime);
-                System.Console.WriteLine("Memory after loading {0} {1}", modelPath, memory);
-              }
-
-              // TODO: Other type of models
-
-              numModels++;
+                executors[i] = new FixedThreadPoolExecutor(1, 4 << i);
             }
-          }
 
-          var totalLoadingTime = (Stopwatch.GetTimestamp() - totalStartTime) * 1000.0 / Stopwatch.Frequency;
-          System.Console.WriteLine("Load {0} models in {1} ms", numModels, totalLoadingTime);
+            using (var reader = new StreamReader(Environment.ExpandEnvironmentVariables(_metadataFile)))
+            {
+                string line;
+                while ((line = reader.ReadLine()) != null)
+                {
+                    string[] splits = line.Split();
+                    var modelPath = Environment.ExpandEnvironmentVariables(splits[0]);
+
+                    var startTime = Stopwatch.GetTimestamp();
+                    if (modelPath.Contains("Attendee"))
+                    {
+                        var engine = new ThreadLocal<BatchPredictionEngine<AttendeeData, AttendeeResult>>(() =>
+                        {
+                            return AttendeeModel.CreateEngine(env, Environment.ExpandEnvironmentVariables(modelPath));
+                        });
+                        // Throughput
+                        RunInParallel(engine, atndBatches, executors, _numStageHandlerThreads, _numRequestHandler, _numIterations);
+
+                        // Latency
+                        //RunLatencySingle(modelPath, engine.Value, atndBatches.Take(10).ToList(), null, amznBatches.Take(10).ToList(), false);
+                        //RunLatencySingle(modelPath, engine, atndBatches, null, amznBatches);
+                        //atndEngines.Add(modelPath, engine);
+                    }
+                    else if (modelPath.Contains("Amazon"))
+                    {
+                        var engine = new ThreadLocal<BatchPredictionEngine<AmazonData, AmazonResult>>(() =>
+                        {
+                            return AmazonModel.CreateEngine(env, Environment.ExpandEnvironmentVariables(modelPath));
+                        });
+                        RunInParallel(engine, amznBatches, executors, _numStageHandlerThreads, _numRequestHandler, _numIterations);
+                        //                RunLatencySingle(modelPath, null, atndBatches.Take(10).ToList(), engine, amznBatches.Take(10).ToList(), false);
+                        //                RunLatencySingle(modelPath, null, atndBatches, engine, amznBatches);
+                        //amznEngines.Add(modelPath, engine);
+                    }
+                    var loadingTime = (Stopwatch.GetTimestamp() - startTime) * 1000.0 / Stopwatch.Frequency;
+                    using (Process proc = Process.GetCurrentProcess())
+                    {
+                        var memory = proc.PrivateMemorySize64;
+                        System.Console.WriteLine("Load {0} in {1} ms", modelPath, loadingTime);
+                        System.Console.WriteLine("Memory after loading {0} {1}", modelPath, memory);
+                    }
+
+                    // TODO: Other type of models
+
+                    numModels++;
+                }
+            }
+
+            var totalLoadingTime = (Stopwatch.GetTimestamp() - totalStartTime) * 1000.0 / Stopwatch.Frequency;
+            System.Console.WriteLine("Load {0} models in {1} ms", numModels, totalLoadingTime);
         }
 
         private static int RegisterRequestorThreads(Action compute, int numThreads)
